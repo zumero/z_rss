@@ -13,7 +13,7 @@ using System.Runtime.CompilerServices;
 // Information about this assembly is defined by the following attributes. 
 // Change them to the values specific to your project.
 
-[assembly: AssemblyTitle("z_rss_update")]
+[assembly: AssemblyTitle("z_rss_create")]
 [assembly: AssemblyDescription("An example of using Zumero from C#")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
@@ -36,7 +36,7 @@ using System.Runtime.CompilerServices;
 
 // ---- END stuff the usually goes in AssemblyInfo.cs
 
-namespace z_rss_update
+namespace z_rss_create
 {
 	class Program
 	{
@@ -68,7 +68,8 @@ namespace z_rss_update
             foreach (feed_row q in rows)
             {
                 string dbfile_name_for_this_feed = string.Format("feed_{0}", q.feedid);
-                Console.WriteLine("Updating {0}: {1}", dbfile_name_for_this_feed, q.url);
+                Console.WriteLine("Creating {0}: {1}", dbfile_name_for_this_feed, q.url);
+
                 SyndicationFeed f = null;
 
                 try
@@ -87,52 +88,76 @@ namespace z_rss_update
 
                 if (f != null)
                 {
-                    // set last_update to the time we retrieved the feed XML
-
-                    db_all_feeds.Execute(
-                            @"INSERT OR REPLACE 
-                            INTO last_update
-                            (feedid, when_unix_time)
-                            VALUES
-                            (?, strftime('%s','now')
-                            );", 
-                            q.feedid);
-
                     SQLiteConnection db_this_feed = open_and_load_zumero(dbfile_name_for_this_feed);
 
-                    foreach (SyndicationItem it in f.Items)
-                    {
-                        Console.WriteLine("    {0}", it.Title.Text);
+                    db_this_feed.Execute("BEGIN TRANSACTION;");
 
-                        TextSyndicationContent t = (TextSyndicationContent) it.Summary;
+                    db_this_feed.Execute(
+                            @"CREATE VIRTUAL TABLE 
+                            items 
+                            USING zumero
+                            (
+                              id TEXT PRIMARY KEY NOT NULL, 
+                              title TEXT NOT NULL,
+                              summary TEXT NOT NULL,
+                              pubdate_unix_time INTEGER NOT NULL
+                            );"
+                            );
 
-                        string id = it.Id;
+                    // each feed is allowed to be pulled by anyone, but only the admin user
+                    // can make changes
 
-                        if (null == id)
-                        {
-                            foreach(SyndicationLink link in it.Links) 
-                            {
-                                id = link.Uri.ToString();
-                                break;
-                            }
-                        }
+                    db_this_feed.ExecuteScalar<string>(
+                            @"SELECT zumero_define_acl_table('main');"
+                            );
 
-                        if (null == id)
-                        {
-                            Console.WriteLine("        no id");
-                        }
-                        else
-                        {
-                            db_this_feed.Execute("INSERT OR IGNORE INTO items (id, title, summary, pubdate_unix_time) VALUES (?,?,?,?)",
-                                    id,
-                                    it.Title.Text,
-                                    t.Text,
-                                    (it.PublishDate.UtcDateTime - new DateTime(1970,1,1)).TotalSeconds
-                                    );
-                        }
-                    }
+                    db_this_feed.Execute(
+                            @"INSERT INTO z_acl
+                            (scheme,who,tbl,op,result)
+                            VALUES ( 
+                                '',
+                                zumero_named_constant('acl_who_anyone'),
+                                '',
+                                '*',
+                                zumero_named_constant('acl_result_deny')
+                            );"
+                            );
+
+                    db_this_feed.Execute(
+                            @"INSERT INTO z_acl
+                            (scheme,who,tbl,op,result)
+                            VALUES ( 
+                                zumero_internal_auth_scheme('zumero_users_admin'),
+                                zumero_named_constant('acl_who_any_authenticated_user'),
+                                '',
+                                '*',
+                                zumero_named_constant('acl_result_allow')
+                            );"
+                            );
+
+                    db_this_feed.Execute(
+                            @"INSERT INTO z_acl
+                            (scheme,who,tbl,op,result)
+                            VALUES ( 
+                                '',
+                                zumero_named_constant('acl_who_anyone'),
+                                '',
+                                zumero_named_constant('acl_op_pull'),
+                                zumero_named_constant('acl_result_allow')
+                            );"
+                            );
+
+                    db_this_feed.Execute("COMMIT TRANSACTION;");
 
                     db_this_feed.Close();
+
+                    // set the feed title
+
+                    db_all_feeds.Execute("INSERT INTO about (feedid, title) VALUES (?,?)",
+                            q.feedid,
+                            f.Title.Text
+                            );
+
                 }
             }
         }
@@ -143,17 +168,9 @@ namespace z_rss_update
 
             List<feed_row> rows = null;
 
-            // find ALL the feeds where the dbfile has been created but its XML
-            // has never been updated
+            // find ALL the feeds that have never had their title set
 
-            rows = db_all_feeds.Query<feed_row> ("SELECT f.feedid AS feedid, f.url AS url FROM feeds AS f INNER JOIN about AS a ON (f.feedid=a.feedid) LEFT OUTER JOIN last_update AS u ON (f.feedid=u.feedid) WHERE (u.when_unix_time IS NULL);");
-
-            do_feeds(db_all_feeds, rows);
-
-            // now check for feeds that have not been updated in the last hour.
-            // do 5 of them.
-
-            rows = db_all_feeds.Query<feed_row> ("SELECT f.feedid AS feedid, f.url AS url FROM feeds AS f INNER JOIN last_update AS u ON (f.feedid=u.feedid) WHERE ((strftime('%s','now') - u.when_unix_time) > (60 * 60)) ORDER BY u.when_unix_time ASC LIMIT 5;");
+            rows = db_all_feeds.Query<feed_row> ("SELECT f.feedid AS feedid, f.url AS url FROM feeds AS f LEFT OUTER JOIN about AS a ON (f.feedid=a.feedid) WHERE (a.title IS NULL);");
 
             do_feeds(db_all_feeds, rows);
 
