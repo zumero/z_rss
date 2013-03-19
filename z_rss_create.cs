@@ -63,7 +63,7 @@ namespace z_rss_create
             public string url { get; set; }
         };
 
-        private static void do_feeds(SQLiteConnection db_all_feeds, List<feed_row> rows)
+        private static void do_feeds(SQLiteConnection db, List<feed_row> rows)
         {
             foreach (feed_row q in rows)
             {
@@ -88,13 +88,13 @@ namespace z_rss_create
 
                 if (f != null)
                 {
-                    SQLiteConnection db_this_feed = open_and_load_zumero(dbfile_name_for_this_feed);
+                    db.Execute("ATTACH ? AS cur;", dbfile_name_for_this_feed);
 
-                    db_this_feed.Execute("BEGIN TRANSACTION;");
+                    db.Execute("BEGIN TRANSACTION;");
 
-                    db_this_feed.Execute(
+                    db.Execute(
                             @"CREATE VIRTUAL TABLE 
-                            items 
+                            cur.items 
                             USING zumero
                             (
                               id TEXT PRIMARY KEY NOT NULL, 
@@ -107,12 +107,12 @@ namespace z_rss_create
                     // each feed is allowed to be pulled by anyone, but only the admin user
                     // can make changes
 
-                    db_this_feed.ExecuteScalar<string>(
-                            @"SELECT zumero_define_acl_table('main');"
+                    db.ExecuteScalar<string>(
+                            @"SELECT zumero_define_acl_table('cur');"
                             );
 
-                    db_this_feed.Execute(
-                            @"INSERT INTO z_acl
+                    db.Execute(
+                            @"INSERT INTO cur.z_acl
                             (scheme,who,tbl,op,result)
                             VALUES ( 
                                 '',
@@ -123,8 +123,8 @@ namespace z_rss_create
                             );"
                             );
 
-                    db_this_feed.Execute(
-                            @"INSERT INTO z_acl
+                    db.Execute(
+                            @"INSERT INTO cur.z_acl
                             (scheme,who,tbl,op,result)
                             VALUES ( 
                                 zumero_internal_auth_scheme('zumero_users_admin'),
@@ -135,8 +135,8 @@ namespace z_rss_create
                             );"
                             );
 
-                    db_this_feed.Execute(
-                            @"INSERT INTO z_acl
+                    db.Execute(
+                            @"INSERT INTO cur.z_acl
                             (scheme,who,tbl,op,result)
                             VALUES ( 
                                 '',
@@ -147,17 +147,16 @@ namespace z_rss_create
                             );"
                             );
 
-                    db_this_feed.Execute("COMMIT TRANSACTION;");
-
-                    db_this_feed.Close();
-
                     // set the feed title
 
-                    db_all_feeds.Execute("INSERT INTO about (feedid, title) VALUES (?,?)",
+                    db.Execute("INSERT INTO main.about (feedid, title) VALUES (?,?)",
                             q.feedid,
                             f.Title.Text
                             );
 
+                    db.Execute("COMMIT TRANSACTION;");
+
+                    db.Execute("DETACH cur;");
                 }
             }
         }

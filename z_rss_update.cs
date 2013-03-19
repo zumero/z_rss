@@ -63,7 +63,7 @@ namespace z_rss_update
             public string url { get; set; }
         };
 
-        private static void do_feeds(SQLiteConnection db_all_feeds, List<feed_row> rows)
+        private static void do_feeds(SQLiteConnection db, List<feed_row> rows)
         {
             foreach (feed_row q in rows)
             {
@@ -87,18 +87,20 @@ namespace z_rss_update
 
                 if (f != null)
                 {
+                    db.Execute("ATTACH ? AS cur;", dbfile_name_for_this_feed);
+
+                    db.Execute("BEGIN TRANSACTION;");
+
                     // set last_update to the time we retrieved the feed XML
 
-                    db_all_feeds.Execute(
+                    db.Execute(
                             @"INSERT OR REPLACE 
-                            INTO last_update
+                            INTO main.last_update
                             (feedid, when_unix_time)
                             VALUES
                             (?, strftime('%s','now')
                             );", 
                             q.feedid);
-
-                    SQLiteConnection db_this_feed = open_and_load_zumero(dbfile_name_for_this_feed);
 
                     foreach (SyndicationItem it in f.Items)
                     {
@@ -123,7 +125,7 @@ namespace z_rss_update
                         }
                         else
                         {
-                            db_this_feed.Execute("INSERT OR IGNORE INTO items (id, title, summary, pubdate_unix_time) VALUES (?,?,?,?)",
+                            db.Execute("INSERT OR IGNORE INTO cur.items (id, title, summary, pubdate_unix_time) VALUES (?,?,?,?)",
                                     id,
                                     it.Title.Text,
                                     t.Text,
@@ -132,7 +134,9 @@ namespace z_rss_update
                         }
                     }
 
-                    db_this_feed.Close();
+                    db.Execute("COMMIT TRANSACTION;");
+
+                    db.Execute("DETACH cur;");
                 }
             }
         }
