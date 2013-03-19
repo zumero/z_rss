@@ -72,7 +72,19 @@ namespace z_rss_sync
 
                 SQLiteConnection db_this_feed = open_and_load_zumero(dbfile_name_for_this_feed);
 
-                string sync_result = db_this_feed.ExecuteScalar<string>("SELECT zumero_sync('main', ?, ?, zumero_internal_auth_scheme('zumero_users_admin'), 'admin', ?);", server_url, dbfile_name_for_this_feed, password);
+                string sync_result = db_this_feed.ExecuteScalar<string>(
+                        @"SELECT zumero_sync(
+                            'main', 
+                            ?, 
+                            ?, 
+                            zumero_internal_auth_scheme('zumero_users_admin'), 
+                            'admin', 
+                            ?
+                            );", 
+                            server_url, 
+                            dbfile_name_for_this_feed, 
+                            password
+                            );
                 Console.WriteLine("    {0}", sync_result);
 
                 db_this_feed.Close();
