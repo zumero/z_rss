@@ -4,7 +4,7 @@ z_rss
 This code is published largely for the purpose of being read.  It accompanies
 a series of blog articles, the first of which is:
 
-    http://www.ericsink.com/entries/rss_cat_1.html
+http://www.ericsink.com/entries/rss_cat_1.html
 
 If you want to
 actually compile/run this code, here are some tips:
@@ -25,7 +25,7 @@ In other words, you probably want to do something like this:
 
 You need to get the Zumero Client SDK and copy zumero.dylib into this directory.
 
-    http://zumero.com/dev-center/
+http://zumero.com/dev-center/
 
 zinst393e9343b87.s.zumero.net is my Zumero server for this project.
 You'll need to get your own so that you these scripts can have admin access.
